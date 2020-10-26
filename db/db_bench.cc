@@ -923,6 +923,7 @@ class Benchmark {
 }  // namespace leveldb
 
 int main(int argc, char** argv) {
+  printf("LEVELDB >>>> at the top of main, argc: %d\n", argc);
   FLAGS_write_buffer_size = leveldb::Options().write_buffer_size;
   FLAGS_open_files = leveldb::Options().max_open_files;
   std::string default_db_path;
@@ -931,6 +932,7 @@ int main(int argc, char** argv) {
     double d;
     int n;
     char junk;
+    printf("argv[i]: %s\n", i, argv[i]);
     if (leveldb::Slice(argv[i]).starts_with("--benchmarks=")) {
       FLAGS_benchmarks = argv[i] + strlen("--benchmarks=");
     } else if (sscanf(argv[i], "--compression_ratio=%lf%c", &d, &junk) == 1) {

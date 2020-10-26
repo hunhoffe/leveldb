@@ -92,7 +92,7 @@ Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n) {
   if (s.ok()) {
     s = dest_->Append(Slice(ptr, n));
     if (s.ok()) {
-      s = dest_->Flush();
+      s = dest_->Flush(); // Comment this line out if you don't want to flush every log entry
     }
   }
   block_offset_ += kHeaderSize + n;
