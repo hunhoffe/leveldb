@@ -23,6 +23,9 @@
 #include "util/logging.h"
 #include "util/mutexlock.h"
 #include "util/posix_logger.h"
+#include "bespin.h"
+
+#define USE_RUMP    0
 
 namespace leveldb {
 
@@ -176,10 +179,28 @@ class PosixWritableFile : public WritableFile {
  private:
   std::string filename_;
   FILE* file_;
+  // Used for calling directly into rumpuser_* API. This buffer
+  // is similar to regular libc buffers in the stream library
+  char buf_[1024];
+  int len_;
+  int fd_;
 
  public:
   PosixWritableFile(const std::string& fname, FILE* f)
-      : filename_(fname), file_(f) { }
+      : filename_(fname), file_(f), len_(0) {
+    if (!USE_RUMP) {
+        fclose(f); // don't actually use the stream
+        // We have to translate the file to the actual etfs mountpoint, since only files are
+        // still going through etfs
+        char actual_file[64];
+        actual_file[0]='/';
+        int ret = sscanf(fname.c_str(), "/%*[a-z]/leveldbtest-0%s", actual_file + 1);
+        rumpuser_open(actual_file, RUMPUSER_OPEN_RDWR | RUMPUSER_OPEN_CREATE, &fd_);
+        //printf("creating writablefile %s with fd: %d, ret: %d\n", actual_file, fd_, ret);
+    } else {
+        //printf("creating writablefile %s\n", fname.c_str());
+    }
+   }
 
   ~PosixWritableFile() {
     if (file_ != NULL) {
@@ -189,31 +210,66 @@ class PosixWritableFile : public WritableFile {
   }
 
   virtual Status Append(const Slice& data) {
-    size_t r = fwrite_unlocked(data.data(), 1, data.size(), file_);
-    if (r != data.size()) {
-      return IOError(filename_, errno);
+    if (!USE_RUMP) {
+     int available;
+     int left = data.size();
+     int offset = 0;
+     while (left > 0) {
+         available = 1024 - len_;
+         if (left < available)
+             available = left;
+         memcpy(buf_ + len_, data.data() + offset, available);
+         len_ += available;
+         offset += available;
+         left -= available;
+         if (len_ == 1024)
+             Flush();
+     }
+    } else {
+        size_t r = fwrite_unlocked(data.data(), 1, data.size(), file_);
+        //printf("LEVELDB >>>> am i even here, size: %d, writing to file: %s, bufsiz: %d\n", data.size(), filename_.c_str(), BUFSIZ);
+        if (r != data.size()) {
+            return IOError(filename_, errno);
+        }
     }
     return Status::OK();
   }
 
   virtual Status Close() {
-    Status result;
-    if (fclose(file_) != 0) {
-      result = IOError(filename_, errno);
+    if (!USE_RUMP) {
+          rumpuser_close(fd_);
+          return Status::OK();
+    } else {
+          Status result;
+          if (fclose(file_) != 0) {
+              result = IOError(filename_, errno);
+          }
+          file_ = NULL;
+          return result;
     }
-    file_ = NULL;
-    return result;
   }
 
   virtual Status Flush() {
-    if (fflush_unlocked(file_) != 0) {
-      return IOError(filename_, errno);
-    }
-    return Status::OK();
+      //printf("LEVELDB >>> are we flushing in Flush? file: %s\n", filename_.c_str());
+      if (!USE_RUMP) {
+          if (len_ > 0) {
+              size_t ret;
+              struct rumpuser_iovec rio;
+              rio.iov_base = buf_;
+              rio.iov_len = len_;
+              rumpuser_iovwrite(fd_,  &rio, 1, -1, &ret);
+              len_ = 0;
+          }
+      } else {
+          if (fflush_unlocked(file_) != 0) {
+              return IOError(filename_, errno);
+          }
+      }
+      return Status::OK();
   }
 
   Status SyncDirIfManifest() {
-    const char* f = filename_.c_str();
+      const char* f = filename_.c_str();
     const char* sep = strrchr(f, '/');
     Slice basename;
     std::string dir;
@@ -241,22 +297,26 @@ class PosixWritableFile : public WritableFile {
 
   virtual Status Sync() {
     // Ensure new files referred to by the manifest are in the filesystem.
-    Status s = SyncDirIfManifest();
-    if (!s.ok()) {
+      Status s = SyncDirIfManifest();
+      if (!USE_RUMP) {
+          Flush();
+      } else {
+          if (!s.ok()) {
+              return s;
+          }
+          if (fflush_unlocked(file_) != 0 ||
+                  fdatasync(fileno(file_)) != 0) {
+              s = Status::IOError(filename_, strerror(errno));
+          }
+      }
       return s;
-    }
-    if (fflush_unlocked(file_) != 0 ||
-        fdatasync(fileno(file_)) != 0) {
-      s = Status::IOError(filename_, strerror(errno));
-    }
-    return s;
   }
 };
 
 static int LockOrUnlock(int fd, bool lock) {
-  errno = 0;
-  struct flock f;
-  memset(&f, 0, sizeof(f));
+    errno = 0;
+    struct flock f;
+    memset(&f, 0, sizeof(f));
   f.l_type = (lock ? F_WRLCK : F_UNLCK);
   f.l_whence = SEEK_SET;
   f.l_start = 0;
