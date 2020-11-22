@@ -1,3 +1,4 @@
+#define RUMPUSER_OPEN_RDONLY    0x0000
 #define RUMPUSER_OPEN_RDWR  0x0002
 #define RUMPUSER_OPEN_CREATE  0x0004
 
@@ -8,5 +9,6 @@ struct rumpuser_iovec {
 
 // Leave these as weak symbols because we'll link them directly to bespin during bake-time
 int rumpuser_iovwrite(int fd, const struct rumpuser_iovec *ruiov, size_t iovlen, int64_t off, size_t *retv) __attribute__((weak));
+int rumpuser_iovread(int fd, const struct rumpuser_iovec *ruiov, size_t iovlen, int64_t off, size_t *retv) __attribute__((weak));
 int rumpuser_open(const char *name, int mode, int *fd) __attribute__((weak));
 int rumpuser_close(int fd) __attribute__((weak));

@@ -25,7 +25,8 @@
 #include "util/posix_logger.h"
 #include "bespin.h"
 
-#define USE_RUMP    0
+#define USE_RUMP            0
+#define CUSTOM_BUFFER_SIZE  4096
 
 namespace leveldb {
 
@@ -76,19 +77,51 @@ class PosixRandomAccessFile: public RandomAccessFile {
 
  public:
   PosixRandomAccessFile(const std::string& fname, int fd)
-      : filename_(fname), fd_(fd) { }
-  virtual ~PosixRandomAccessFile() { close(fd_); }
+      : filename_(fname) {
+     if (!USE_RUMP) {
+      char actual_file[64];
+      actual_file[0]='/';
+      int ret = sscanf(fname.c_str(), "/%*[a-z]/leveldbtest-0%s", actual_file + 1);
+      rumpuser_open(actual_file, RUMPUSER_OPEN_RDONLY, &fd_);
+    } else {
+        fd_ = fd;
+    }
+    }
+
+  
+  virtual ~PosixRandomAccessFile() { 
+    if (!USE_RUMP) {
+        rumpuser_close(fd_);
+    } else {
+        close(fd_);
+    }
+    }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const {
-    Status s;
-    ssize_t r = pread(fd_, scratch, n, static_cast<off_t>(offset));
-    *result = Slice(scratch, (r < 0) ? 0 : r);
-    if (r < 0) {
-      // An error: return a non-ok status
-      s = IOError(filename_, errno);
-    }
-    return s;
+
+      Status s;
+      if (!USE_RUMP) {
+          size_t ret;
+          struct rumpuser_iovec rio;
+          rio.iov_base = scratch;
+          rio.iov_len = n;
+          //printf("iovread on fd: %d returned: %d, offset: %d\n", fd_, ret, offset);
+          rumpuser_iovread(fd_,  &rio, 1, offset, &ret);
+          *result = Slice(scratch, (ret < 0) ? 0 : ret);
+          if (ret < 0) {
+              // An error: return a non-ok status
+              s = IOError(filename_, errno);
+          }
+      } else {
+          ssize_t r = pread(fd_, scratch, n, static_cast<off_t>(offset));
+          *result = Slice(scratch, (r < 0) ? 0 : r);
+          if (r < 0) {
+              // An error: return a non-ok status
+              s = IOError(filename_, errno);
+         }
+     }
+     return s;
   }
 };
 
@@ -181,7 +214,7 @@ class PosixWritableFile : public WritableFile {
   FILE* file_;
   // Used for calling directly into rumpuser_* API. This buffer
   // is similar to regular libc buffers in the stream library
-  char buf_[1024];
+  char buf_[CUSTOM_BUFFER_SIZE];
   int len_;
   int fd_;
 
@@ -214,16 +247,24 @@ class PosixWritableFile : public WritableFile {
      int available;
      int left = data.size();
      int offset = 0;
+
+             /* size_t ret;
+              struct rumpuser_iovec rio;
+              rio.iov_base = (void *) data.data();
+              rio.iov_len = data.size();
+     rumpuser_iovwrite(fd_,  &rio, 1, -1, &ret);*/
      while (left > 0) {
-         available = 1024 - len_;
+         available = CUSTOM_BUFFER_SIZE - len_;
          if (left < available)
              available = left;
          memcpy(buf_ + len_, data.data() + offset, available);
          len_ += available;
          offset += available;
          left -= available;
-         if (len_ == 1024)
+         if (len_ == CUSTOM_BUFFER_SIZE) {
+             //printf("leveldb: oops, about to flush %s\n", filename_.c_str());
              Flush();
+          }
      }
     } else {
         size_t r = fwrite_unlocked(data.data(), 1, data.size(), file_);
@@ -371,28 +412,31 @@ class PosixEnv : public Env {
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) {
+    //printf("lol people actually want a NewRandomAccessFile? %s\n", fname.c_str());
     *result = NULL;
-    Status s;
-    int fd = open(fname.c_str(), O_RDONLY);
-    if (fd < 0) {
-      s = IOError(fname, errno);
-    } else if (mmap_limit_.Acquire()) {
-      uint64_t size;
-      s = GetFileSize(fname, &size);
-      if (s.ok()) {
-        void* base = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
-        if (base != MAP_FAILED) {
-          *result = new PosixMmapReadableFile(fname, base, size, &mmap_limit_);
-        } else {
-          s = IOError(fname, errno);
-        }
-      }
-      close(fd);
-      if (!s.ok()) {
-        mmap_limit_.Release();
-      }
+    Status s = Status::OK();
+    if (USE_RUMP) {
+        int fd = open(fname.c_str(), O_RDONLY);
+        if (fd < 0) {
+            s = IOError(fname, errno);
+        } else if (mmap_limit_.Acquire()) {
+            uint64_t size;
+            s = GetFileSize(fname, &size);
+            if (s.ok()) {
+                void* base = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
+                if (base != MAP_FAILED) {
+                    *result = new PosixMmapReadableFile(fname, base, size, &mmap_limit_);
+                } else {
+                    s = IOError(fname, errno);
+                }
+            }
+            close(fd);
+            if (!s.ok()) {
+                mmap_limit_.Release();
+            }
+        } 
     } else {
-      *result = new PosixRandomAccessFile(fname, fd);
+      *result = new PosixRandomAccessFile(fname, -1);
     }
     return s;
   }
