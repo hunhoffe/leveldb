@@ -96,7 +96,7 @@ class Block::Iter : public Iterator {
     return (value_.data() + value_.size()) - data_;
   }
 
-  uint32_t GetRestartPoint(uint32_t index) {
+  inline uint32_t GetRestartPoint(uint32_t index) {
     assert(index < num_restarts_);
     return DecodeFixed32(data_ + restarts_ + index * sizeof(uint32_t));
   }
@@ -171,9 +171,13 @@ class Block::Iter : public Iterator {
       uint32_t mid = (left + right + 1) / 2;
       uint32_t region_offset = GetRestartPoint(mid);
       uint32_t shared, non_shared, value_length;
-      const char* key_ptr = DecodeEntry(data_ + region_offset,
-                                        data_ + restarts_,
-                                        &shared, &non_shared, &value_length);
+      // Manually inline DecodeEntry
+      const char* key_ptr = NULL;
+      if (restarts_  >= region_offset + 3) {
+          shared = 0;
+          non_shared = 24;
+          key_ptr = data_ + region_offset + 3;
+      }
       if (key_ptr == NULL || (shared != 0)) {
         CorruptionError();
         return;
