@@ -1191,12 +1191,12 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
       mutex_.Unlock();
       status = log_->AddRecord(WriteBatchInternal::Contents(updates));
       bool sync_error = false;
-      /*if (status.ok() && options.sync) {
+      if (status.ok() && options.sync) {
         status = logfile_->Sync();
         if (!status.ok()) {
           sync_error = true;
         }
-      }*/
+      }
       if (status.ok()) {
         status = WriteBatchInternal::InsertInto(updates, mem_);
       }
@@ -1290,12 +1290,14 @@ Status DBImpl::MakeRoomForWrite(bool force) {
   Status s;
   while (true) {
     if (!bg_error_.ok()) {
+      printf("Background error in MakeRoomForWrite?\n");
       // Yield previous error
       s = bg_error_;
       break;
     } else if (
         allow_delay &&
         versions_->NumLevelFiles(0) >= config::kL0_SlowdownWritesTrigger) {
+        printf("MakeRoomForWrite: are we sleeping...? config slowdown: %d, stop: %d\n", config::kL0_SlowdownWritesTrigger, config::kL0_StopWritesTrigger);
       // We are getting close to hitting a hard limit on the number of
       // L0 files.  Rather than delaying a single write by several
       // seconds when we hit the hard limit, start delaying each
@@ -1314,10 +1316,12 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // We have filled up the current memtable, but the previous
       // one is still being compacted, so we wait.
       Log(options_.info_log, "Current memtable full; waiting...\n");
+      printf("MakeRoomForWrite: are we waiting??? for previous memtable\n");
       bg_cv_.Wait();
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
       // There are too many level-0 files.
       Log(options_.info_log, "Too many L0 files; waiting...\n");
+      printf("MakeRoomForWrite: too many ...\n");
       bg_cv_.Wait();
     } else {
       // Attempt to switch to a new memtable and trigger compaction of old
