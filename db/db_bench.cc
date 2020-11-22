@@ -227,7 +227,7 @@ class Stats {
       else if (next_report_ < 100000) next_report_ += 10000;
       else if (next_report_ < 500000) next_report_ += 50000;
       else                            next_report_ += 100000;
-      fprintf(stderr, "... finished %d ops%30s\r", done_, "");
+      //fprintf(stderr, "... finished %d ops%30s\n", done_, "");
       fflush(stderr);
     }
   }
@@ -241,21 +241,25 @@ class Stats {
     // that does not call FinishedSingleOp().
     if (done_ < 1) done_ = 1;
 
+    // Rate is computed on actual elapsed time, not the sum of per-thread
+    // elapsed times.
+    double elapsed = (finish_ - start_) * 1e-6;
+
     std::string extra;
+
     if (bytes_ > 0) {
-      // Rate is computed on actual elapsed time, not the sum of per-thread
-      // elapsed times.
-      double elapsed = (finish_ - start_) * 1e-6;
       char rate[100];
       snprintf(rate, sizeof(rate), "%6.1f MB/s",
                (bytes_ / 1048576.0) / elapsed);
       extra = rate;
     }
     AppendWithSpace(&extra, message_);
+    printf("done: %d, elapsed: %f\n", done_, elapsed);
 
-    fprintf(stdout, "%-12s : %11.3f micros/op;%s%s\n",
+    fprintf(stdout, "%-12s : done: %d, %11.3f ops/sec;%s%s\n",
             name.ToString().c_str(),
-            seconds_ * 1e6 / done_,
+            done_,
+            done_ / elapsed,
             (extra.empty() ? "" : " "),
             extra.c_str());
     if (FLAGS_histogram) {
@@ -445,10 +449,12 @@ class Benchmark {
       if (name == Slice("fillseq")) {
         fresh_db = true;
         method = &Benchmark::WriteSeq;
+        num_threads = 1;
       } else if (name == Slice("fillbatch")) {
         fresh_db = true;
         entries_per_batch_ = 1000;
         method = &Benchmark::WriteSeq;
+        num_threads = 1;
       } else if (name == Slice("fillrandom")) {
         fresh_db = true;
         method = &Benchmark::WriteRandom;
@@ -695,6 +701,7 @@ class Benchmark {
     options.write_buffer_size = FLAGS_write_buffer_size;
     options.max_open_files = FLAGS_open_files;
     options.filter_policy = filter_policy_;
+    options.compression = kNoCompression;
     Status s = DB::Open(options, FLAGS_db, &db_);
     if (!s.ok()) {
       fprintf(stderr, "open error: %s\n", s.ToString().c_str());
@@ -770,6 +777,7 @@ class Benchmark {
     ReadOptions options;
     std::string value;
     int found = 0;
+    
     for (int i = 0; i < reads_; i++) {
       char key[100];
       const int k = thread->rand.Next() % FLAGS_num;
@@ -923,7 +931,6 @@ class Benchmark {
 }  // namespace leveldb
 
 int main(int argc, char** argv) {
-  printf("LEVELDB >>>> at the top of main, argc: %d\n", argc);
   FLAGS_write_buffer_size = leveldb::Options().write_buffer_size;
   FLAGS_open_files = leveldb::Options().max_open_files;
   std::string default_db_path;
@@ -932,7 +939,6 @@ int main(int argc, char** argv) {
     double d;
     int n;
     char junk;
-    printf("argv[i]: %s\n", i, argv[i]);
     if (leveldb::Slice(argv[i]).starts_with("--benchmarks=")) {
       FLAGS_benchmarks = argv[i] + strlen("--benchmarks=");
     } else if (sscanf(argv[i], "--compression_ratio=%lf%c", &d, &junk) == 1) {
