@@ -18,8 +18,6 @@
 
 namespace leveldb {
 
-int memcpy_lol ( void * ptr1, const void * ptr2, size_t num ) __attribute__((weak));
-
 // Standard Put... routines append to a string
 extern void PutFixed32(std::string* dst, uint32_t value);
 extern void PutFixed64(std::string* dst, uint64_t value);
@@ -61,7 +59,7 @@ inline uint32_t DecodeFixed32(const char* ptr) {
   if (port::kLittleEndian) {
     // Load the raw bytes
     uint32_t result;
-    memcpy_lol(&result, ptr, sizeof(result));  // gcc optimizes this to a plain load
+    memcpy(&result, ptr, sizeof(result));  // gcc optimizes this to a plain load
     return result;
   } else {
     return ((static_cast<uint32_t>(static_cast<unsigned char>(ptr[0])))
