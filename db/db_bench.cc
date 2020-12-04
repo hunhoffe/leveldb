@@ -446,7 +446,29 @@ class Benchmark {
       bool fresh_db = false;
       int num_threads = FLAGS_threads;
 
-      if (name == Slice("fillseq")) {
+      if (name == Slice("bespintest")) {
+        fresh_db = true;
+        method = &Benchmark::BespinTest;
+
+        RandomGenerator gen;
+        Env* posix_env = Env::Default();
+
+        // Write the file once, then it's read by multiple threads
+        WritableFile *file;
+        Status s = posix_env->NewWritableFile(std::string(FLAGS_db) + "/herp", &file);
+        if (!s.ok()) {
+            fprintf(stderr, "yeah no\n");
+            exit(1);
+        }
+        for (int i = 0; i < 1024; i++) {
+            s = file->Append(gen.Generate(4096));
+            if (!s.ok()) {
+                fprintf(stderr, "append no\n");
+                exit(1);
+            }
+        }
+        file->Close();
+      } else if (name == Slice("fillseq")) {
         fresh_db = true;
         method = &Benchmark::WriteSeq;
         num_threads = 1;
@@ -707,6 +729,22 @@ class Benchmark {
       fprintf(stderr, "open error: %s\n", s.ToString().c_str());
       exit(1);
     }
+  }
+
+  void BespinTest(ThreadState *thread) {
+    Random rnd(1234);
+    Env* posix_env = Env::Default();
+
+    RandomAccessFile *r;
+    posix_env->NewRandomAccessFile(std::string(FLAGS_db) + "/herp", &r);
+
+    size_t read_size = 4096;
+    Slice result;
+    char scratch[4096];
+    for (int i = 0; i < num_; i++) {
+        uint64_t offset = 4096 * rnd.Uniform(1024);
+        r->Read(offset, 4096, &result, scratch);
+    }    
   }
 
   void WriteSeq(ThreadState* thread) {
