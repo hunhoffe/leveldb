@@ -24,9 +24,26 @@ CFLAGS += -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
 CXXFLAGS += -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT)
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
+LDFLAGS += -L/home/amytai/litl/lib -lcbomcs_spinlock \
+-u amy_pthread_mutex_lock \
+-u amy_pthread_mutex_unlock \
+-u amy_pthread_mutex_init \
+-u amy_pthread_mutex_destroy \
+-u amy_pthread_cond_init \
+-u amy_pthread_cond_destroy \
+-u amy_pthread_cond_signal \
+-u amy_pthread_cond_broadcast \
+-u amy_pthread_cond_wait \
+-u amy_pthread_create \
+-L/home/amytai/litl/obj/CLHT -lclht
+LDFLAGS += -L/home/amytai/litl/obj/CLHT/ssmem -lssmem
 LIBS += $(PLATFORM_LIBS)
+#LIBS += -lcbomcs_spin_then_park
 
 LIBOBJECTS = $(SOURCES:.cc=.o)
+#LIBOBJECT += /home/amytai/litl/obj/cbomcs_spin_then_park/interpose.o
+LIBOBJECT += /home/amytai/litl/obj/cbomcs_spin_then_park/utils.o
+#LIBOBJECTS += /home/amytai/litl/obj/cbomcs_spin_then_park/cbomcs_spin_then_park.o
 MEMENVOBJECTS = $(MEMENV_SOURCES:.cc=.o)
 
 TESTUTIL = ./util/testutil.o

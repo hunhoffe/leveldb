@@ -25,8 +25,10 @@
 #include "util/posix_logger.h"
 
 namespace leveldb {
+int amy_pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void *), void *arg) asm ("amy_pthread_create") __attribute__((weak));
 
 namespace {
+
 
 static Status IOError(const std::string& context, int err_number) {
   return Status::IOError(context, strerror(err_number));
@@ -535,7 +537,7 @@ void PosixEnv::Schedule(void (*function)(void*), void* arg) {
     started_bgthread_ = true;
     PthreadCall(
         "create thread",
-        pthread_create(&bgthread_, NULL,  &PosixEnv::BGThreadWrapper, this));
+        amy_pthread_create(&bgthread_, NULL,  &PosixEnv::BGThreadWrapper, this));
   }
 
   // If the queue is currently empty, the background thread may currently be
@@ -588,7 +590,7 @@ void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {
   state->user_function = function;
   state->arg = arg;
   PthreadCall("start thread",
-              pthread_create(&t, NULL,  &StartThreadWrapper, state));
+              amy_pthread_create(&t, NULL,  &StartThreadWrapper, state));
 }
 
 }  // namespace
