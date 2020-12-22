@@ -4,3 +4,4 @@ cp -r db/* $1/db
 cp -r util/* $1/util
 cp -r include/* $1/include
 cp -r table/* $1/table
+cp Makefile $1/Makefile
