@@ -24,7 +24,7 @@ CFLAGS += -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
 CXXFLAGS += -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT)
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
-LDFLAGS += -L../litl/lib -lcbomcs_spinlock \
+LDFLAGS += -L../litl/lib -lhmcs_original \
 -u amy_pthread_mutex_lock \
 -u amy_pthread_mutex_unlock \
 -u amy_pthread_mutex_init \
