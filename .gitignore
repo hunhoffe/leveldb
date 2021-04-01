@@ -4,6 +4,7 @@ build_config.mk
 *.dylib*
 *.so
 *.so.*
+*.csv
 *_test
 db_bench
 leveldbutil
